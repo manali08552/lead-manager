@@ -1,37 +1,94 @@
 
 const db = require("../database/db");
 
-// Allowed lead statuses
 const allowedStatuses = ["New", "Contacted", "Qualified", "Lost"];
 
-// 1. ADD NEW LEAD
-exports.addLead = (req, res) => {
-    const { name, email, phone, company, source, status } = req.body;
+const allowedSources = [
+    "Website",
+    "LinkedIn",
+    "Referral",
+    "Advertisement",
+    "Other"
+];
 
-    // Required field validation
+function validateLeadInput(body, requireStatus = false) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const email = typeof body.email === "string"
+        ? body.email.trim().toLowerCase()
+        : "";
+    const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+    const company = typeof body.company === "string" ? body.company.trim() : "";
+    const source = typeof body.source === "string" ? body.source.trim() : "";
+
+    const status = requireStatus
+        ? body.status
+        : (body.status || "New");
+
     if (!name || !email || !phone || !company || !source) {
-        return res.status(400).json({
-            message: "All fields are required"
-        });
+        return { error: "All fields are required" };
+    }
+
+    if (name.length > 100 || company.length > 120) {
+        return { error: "Name or company name is too long" };
+    }
+
+    if (email.length > 254) {
+        return { error: "Email address is too long" };
     }
 
     // Email validation
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailPattern.test(email)) {
+        return { error: "Please enter a valid email address" };
+    }
+
+    // Exactly 10 digits required
+    const phonePattern = /^\d{10}$/;
+
+    if (!phonePattern.test(phone)) {
+        return {
+            error: "Phone number must contain exactly 10 digits"
+        };
+    }
+
+    if (!allowedSources.includes(source)) {
+        return { error: "Invalid lead source" };
+    }
+
+    if (!allowedStatuses.includes(status)) {
+        return { error: "Invalid lead status" };
+    }
+
+    return {
+        values: {
+            name,
+            email,
+            phone,
+            company,
+            source,
+            status
+        }
+    };
+}
+
+function isValidId(id) {
+    return /^\d+$/.test(id) &&
+        Number(id) > 0 &&
+        Number.isSafeInteger(Number(id));
+}
+
+// ADD NEW LEAD
+exports.addLead = (req, res) => {
+    const validation = validateLeadInput(req.body || {});
+
+    if (validation.error) {
         return res.status(400).json({
-            message: "Please enter a valid email address"
+            message: validation.error
         });
     }
 
-    // Status validation
-    const leadStatus = status || "New";
-
-    if (!allowedStatuses.includes(leadStatus)) {
-        return res.status(400).json({
-            message: "Invalid lead status"
-        });
-    }
+    const { name, email, phone, company, source, status } = validation.values;
 
     const sql = `
         INSERT INTO leads (name, email, phone, company, source, status)
@@ -40,7 +97,7 @@ exports.addLead = (req, res) => {
 
     db.run(
         sql,
-        [name.trim(), email.trim(), phone.trim(), company.trim(), source, leadStatus],
+        [name, email, phone, company, source, status],
         function (err) {
             if (err) {
                 return res.status(500).json({
@@ -57,7 +114,7 @@ exports.addLead = (req, res) => {
     );
 };
 
-// 2. GET ALL LEADS
+// GET ALL LEADS
 exports.getAllLeads = (req, res) => {
     const sql = "SELECT * FROM leads ORDER BY id DESC";
 
@@ -73,11 +130,11 @@ exports.getAllLeads = (req, res) => {
     });
 };
 
-// 3. GET SINGLE LEAD
+// GET SINGLE LEAD
 exports.getLeadById = (req, res) => {
     const { id } = req.params;
 
-    if (!/^\d+$/.test(id)) {
+    if (!isValidId(id)) {
         return res.status(400).json({
             message: "Invalid lead ID"
         });
@@ -105,36 +162,25 @@ exports.getLeadById = (req, res) => {
     );
 };
 
-// 4. UPDATE LEAD
+// UPDATE LEAD
 exports.updateLead = (req, res) => {
     const { id } = req.params;
-    const { name, email, phone, company, source, status } = req.body;
 
-    if (!/^\d+$/.test(id)) {
+    if (!isValidId(id)) {
         return res.status(400).json({
             message: "Invalid lead ID"
         });
     }
 
-    if (!name || !email || !phone || !company || !source || !status) {
+    const validation = validateLeadInput(req.body || {}, true);
+
+    if (validation.error) {
         return res.status(400).json({
-            message: "All fields are required for updating a lead"
+            message: validation.error
         });
     }
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailPattern.test(email)) {
-        return res.status(400).json({
-            message: "Please enter a valid email address"
-        });
-    }
-
-    if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({
-            message: "Invalid lead status"
-        });
-    }
+    const { name, email, phone, company, source, status } = validation.values;
 
     const sql = `
         UPDATE leads
@@ -144,7 +190,7 @@ exports.updateLead = (req, res) => {
 
     db.run(
         sql,
-        [name.trim(), email.trim(), phone.trim(), company.trim(), source, status, id],
+        [name, email, phone, company, source, status, id],
         function (err) {
             if (err) {
                 return res.status(500).json({
@@ -166,11 +212,11 @@ exports.updateLead = (req, res) => {
     );
 };
 
-// 5. DELETE LEAD
+// DELETE LEAD
 exports.deleteLead = (req, res) => {
     const { id } = req.params;
 
-    if (!/^\d+$/.test(id)) {
+    if (!isValidId(id)) {
         return res.status(400).json({
             message: "Invalid lead ID"
         });
