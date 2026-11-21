@@ -34,8 +34,6 @@ function App() {
   // Load leads from backend
   const fetchLeads = async () => {
     try {
-      setLoading(true);
-
       const response = await fetch(API_URL);
 
       if (!response.ok) {
@@ -45,7 +43,7 @@ function App() {
       const data = await response.json();
       setLeads(data);
       setError("");
-    } catch (err) {
+    } catch {
       setError(
         "Cannot connect to backend. Make sure your server is running."
       );
@@ -55,7 +53,40 @@ function App() {
   };
 
   useEffect(() => {
-    fetchLeads();
+    let isMounted = true;
+
+    const loadInitialLeads = async () => {
+      try {
+        const response = await fetch(API_URL);
+
+        if (!response.ok) {
+          throw new Error("Unable to load leads");
+        }
+
+        const data = await response.json();
+
+        if (isMounted) {
+          setLeads(data);
+          setError("");
+        }
+      } catch {
+        if (isMounted) {
+          setError(
+            "Cannot connect to backend. Make sure your server is running."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadInitialLeads();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Handle form input changes
@@ -269,17 +300,13 @@ function App() {
     Math.ceil(sortedLeads.length / pageSize)
   );
 
-  const startIndex = (currentPage - 1) * pageSize;
+  // Clamp the displayed page when filtering or deleting reduces page count.
+  // This avoids an effect that updates state during rendering cycles.
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
 
   const paginatedLeads = sortedLeads.slice(startIndex, endIndex);
-
-  // Keep current page valid after deleting or filtering leads
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
 
   // Dashboard statistics
   const totalLeads = leads.length;
@@ -786,25 +813,25 @@ function App() {
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={currentPage === 1}
+                  disabled={safeCurrentPage === 1}
                   onClick={() =>
-                    setCurrentPage((page) => Math.max(1, page - 1))
+                    setCurrentPage((page) => Math.max(1, Math.min(page, totalPages) - 1))
                   }
                 >
                   Previous
                 </button>
 
                 <span style={{ fontSize: "14px", fontWeight: "600" }}>
-                  Page {currentPage} of {totalPages}
+                  Page {safeCurrentPage} of {totalPages}
                 </span>
 
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={currentPage === totalPages}
+                  disabled={safeCurrentPage === totalPages}
                   onClick={() =>
                     setCurrentPage((page) =>
-                      Math.min(totalPages, page + 1)
+                      Math.min(totalPages, Math.min(page, totalPages) + 1)
                     )
                   }
                 >
